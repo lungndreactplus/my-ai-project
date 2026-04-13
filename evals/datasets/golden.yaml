@@ -1,0 +1,54 @@
+- description: "PM — user login spec stays technology-free"
+  vars:
+    feature_description: "A user can sign in with email and password and remain signed in across browser restarts until they explicitly sign out."
+  assert:
+    - type: contains-all
+      value:
+        - "Functional Requirements"
+        - "Success Criteria"
+        - "User Scenarios"
+    - type: not-contains-any
+      value: ["JWT", "OAuth", "bcrypt", "Rails", "Ruby", "PostgreSQL", "cookie", "token"]
+    - type: llm-rubric
+      value: |
+        Pass only if the spec:
+        (1) describes user-visible behavior exclusively,
+        (2) names no specific technology, framework, or protocol,
+        (3) has at least one measurable success criterion (time, rate, or percentage),
+        (4) has at least one edge case or error scenario.
+
+- description: "PM — conversation create spec captures incremental UX without naming protocol"
+  vars:
+    feature_description: "A user picks one of their configured agents and starts a new conversation. They see the assistant's reply appear incrementally as it is generated."
+  assert:
+    - type: contains
+      value: "User Scenarios"
+    - type: not-contains-any
+      value: ["SSE", "WebSocket", "Anthropic", "Server-Sent Events", "streaming API"]
+    - type: llm-rubric
+      value: "Pass if the spec captures incremental reveal of the assistant reply as a user-facing requirement, without naming any transport protocol or vendor."
+
+- description: "Architect — plan cites constitution for every new service"
+  vars:
+    spec_content: |
+      ## Overview
+      Users can create a new conversation by picking one of their agents and sending a first message.
+      ## Functional Requirements
+      - User selects an agent they own.
+      - System creates a conversation and records the first message.
+      - System returns the assistant reply.
+  assert:
+    - type: contains-all
+      value:
+        - "BaseService"
+        - "ServiceResult"
+        - "UUID"
+        - "AI::ClaudeClient"
+        - "RSpec"
+    - type: llm-rubric
+      value: |
+        Pass only if the plan:
+        (1) lists at least one Service Object under app/services/,
+        (2) cites a constitution section (§ III, IV, V, VI, or VII) for each architectural decision,
+        (3) includes an RSpec task for every new service,
+        (4) routes any Claude call through AI::ClaudeClient — no direct SDK use.

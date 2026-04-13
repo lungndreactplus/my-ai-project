@@ -1,0 +1,36 @@
+name: Claude Constitution Review
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+  pull-requests: write
+  issues: write
+
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Constitution + spec/plan drift review
+        uses: anthropics/claude-code-action@v1
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          prompt: |
+            Review this PR against .specify/memory/constitution.md. Produce an inline-comment review.
+
+            MANDATORY CHECKS (fail the job if any violation is found):
+
+            1. § III — Every new migration uses `id: :uuid` and every `t.references` uses `type: :uuid`.
+            2. § IV — Every new file under backend/app/services/ inherits BaseService and returns ServiceResult. Controllers stay thin (no business logic).
+            3. § V — No direct Anthropic SDK, Faraday, or HTTP call to the Claude API outside backend/app/services/ai/claude_client.rb.
+            4. § VI — Frontend changes use Tailwind only, the centralized store, and the shared apiClient wrapper. No bare fetch/axios in components.
+            5. § VII — Every new service has an accompanying RSpec. External HTTP is stubbed with WebMock or VCR. Rubocop clean.
+            6. If the branch name or PR title references a feature under .specify/specs/, verify the diff is consistent with that feature's plan.md — flag any scope creep.
+
+            Comment on each violation inline with the specific file:line and the section number it violates. End with an overall verdict: APPROVE / REQUEST CHANGES / REJECT.

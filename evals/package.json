@@ -1,0 +1,14 @@
+{
+  "name": "my-ai-project-evals",
+  "private": true,
+  "version": "0.0.1",
+  "description": "Prompt regression suite for the AI team agent personas.",
+  "scripts": {
+    "eval": "promptfoo eval",
+    "view": "promptfoo view",
+    "baseline": "promptfoo eval --output baseline.json"
+  },
+  "devDependencies": {
+    "promptfoo": "^0.92.0"
+  }
+}

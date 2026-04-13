@@ -1,0 +1,46 @@
+# Dependencies
+node_modules/
+vendor/bundle/
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# IDE
+.vscode/
+.idea/
+*.swp
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+log/
+
+# Build artifacts
+dist/
+build/
+tmp/
+
+# Eval cache
+evals/.promptfoo/
+evals/output/
+evals/node_modules/
+
+# Backend (Rails)
+backend/tmp/
+backend/log/
+backend/storage/
+backend/.bundle/
+backend/node_modules/
+
+# Frontend
+frontend/node_modules/
+frontend/dist/
+frontend/.vite/
+
+# BMAD source clone (kept outside repo, but if accidentally placed inside)
+BMAD-METHOD/

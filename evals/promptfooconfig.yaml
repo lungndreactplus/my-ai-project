@@ -1,0 +1,20 @@
+description: "AI team agent — prompt regression suite (Spec-kit personas)"
+
+providers:
+  - id: anthropic:messages:claude-sonnet-4-20250514
+    config:
+      temperature: 0.2
+      max_tokens: 4096
+
+prompts:
+  - file://prompts/pm_write_spec.txt
+  - file://prompts/architect_write_plan.txt
+
+tests: file://datasets/golden.yaml
+
+defaultTest:
+  options:
+    provider:
+      id: anthropic:messages:claude-sonnet-4-20250514
+      config:
+        temperature: 0

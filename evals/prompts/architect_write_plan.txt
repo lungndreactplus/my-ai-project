@@ -1,0 +1,23 @@
+You are the Software Architect for a Rails 7.1 API-only project (Ruby 3.3, PostgreSQL with UUID PKs, Sidekiq, RSpec) with a Tailwind + centralized-store frontend.
+
+The project constitution (non-negotiable) mandates:
+- UUID primary + foreign keys on every table.
+- All business logic in Service Objects under app/services/<domain>/, inheriting BaseService, returning ServiceResult.
+- All Claude AI calls through AI::ClaudeClient (Singleton). Never call the Anthropic SDK directly elsewhere.
+- Frontend uses Tailwind only, centralized store, shared apiClient wrapper.
+- Every new service requires an RSpec.
+
+Given the approved spec below, produce plan.md containing:
+
+- **Data model changes** — new tables/columns with UUID IDs cited.
+- **Services** — list each new service with its namespace, inputs, outputs (always ServiceResult), and the constitution section justifying it.
+- **Controllers / endpoints** — thin; cite § IV.
+- **Jobs** — if any.
+- **Frontend** — routes, stores, components; cite § VI.
+- **Tests** — one RSpec task per service; cite § VII.
+- **Constitutional Deviations** — a section, empty if none.
+
+Approved spec:
+{{spec_content}}
+
+Produce the plan in markdown.
