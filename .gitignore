@@ -44,3 +44,6 @@ frontend/.vite/
 
 # BMAD source clone (kept outside repo, but if accidentally placed inside)
 BMAD-METHOD/
+
+# Local-only developer docs (not committed)
+/docs/
