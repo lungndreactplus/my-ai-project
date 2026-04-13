@@ -1,7 +1,7 @@
-# Agent Project Base Constitution
+# Project Constitution — Mizuho Standard
 
-> This constitution is the **source of truth** for all technical decisions in this repository.
-> Every Agent (Manager, Explore, Plan, Implementer, Reviewer) **MUST** read and comply with this document before producing any output that affects code, specs, or plans.
+> Source of truth for all technical decisions. Aligned with **Mizuho Portal Backend** company standard (`guideline/project-structure.md`, `guideline/techstack.md`).
+> Every Agent (Manager, PM, BA, UX, Architect, Dev, QA) MUST read and comply before producing any output that affects code, specs, or plans.
 > Deviations require an explicit amendment (see Governance).
 
 ---
@@ -12,174 +12,369 @@
 
 Every change flows through three mandatory gates — in this order:
 
-1. **Spec** — A written specification under `.specify/specs/<feature>/spec.md` describing *what* and *why* (user story, acceptance criteria, out-of-scope). No implementation details.
-2. **Plan** — A technical plan under `.specify/specs/<feature>/plan.md` describing *how* (affected files, data model changes, service objects, migrations, tests). Must cite this constitution for every architectural decision.
-3. **Implement** — Code changes that execute the approved Plan. Any divergence from the Plan must be reflected back into the Plan before merge.
+1. **Spec** — `.specify/specs/<feature>/spec.md` describing *what* and *why*.
+2. **Plan** — `.specify/specs/<feature>/plan.md` describing *how*, citing this constitution.
+3. **Implement** — code changes executing the approved Plan.
 
-**Rules:**
-- No direct code edits without an approved Spec + Plan — including "small fixes" that touch business logic.
-- Agents that receive a coding task without a Spec must **halt and request one**, not improvise.
-- Bug fixes with a trivial root cause (typo, missing nil-check) may skip Spec but still require a one-paragraph Plan.
+No direct code edits without an approved Spec + Plan, including "small fixes" that touch business logic. Trivial bug fixes (typo, nil-check) may skip Spec but still need a one-paragraph Plan.
 
-### II. Rails API-Only Backend (Ruby 3.3.0 / Rails 7.1)
+### II. Rails 8 API-Only Backend (NON-NEGOTIABLE)
 
-The backend is a **Rails 7.1 API-only** application on **Ruby 3.3.0** with **PostgreSQL**. This is fixed.
+- **Ruby 3.4.9** (pinned in `.ruby-version`).
+- **Rails 8.1.3** API-only mode (`config.api_only = true`). No views, no session middleware, no cookie middleware.
+- **PostgreSQL 16** with writer + reader replica routing (`DB_WRITER_ENDPOINT` / `DB_READER_ENDPOINT`). Read queries auto-route to replica via Rails native database routing.
+- Authentication: **SSO via Faraday** → returns `access_token` + `refresh_token` (JWT). Encapsulated in `UserAuthenticationService`.
+- Authorization: **Pundit**, default-deny. `policy_scope(Model)` for index, `authorize @resource` for others.
 
-- No views, no ActionMailer, no ActionText, no ActiveStorage (project was generated with `--api --skip-*`).
-- Dependencies are pinned in `Gemfile`; adding a new gem requires Plan-level justification.
-- Background work goes through **Sidekiq** + **Redis**. Do not introduce a second job runner.
-- Authentication is **JWT via `Auth::JwtService`**; authorization is **Pundit**. Do not bypass either.
-
-### III. UUID Primary Keys (NON-NEGOTIABLE)
-
-Every table **MUST** use UUID primary keys and UUID foreign keys.
-
-- Migrations must declare `create_table :xxx, id: :uuid do |t|` and `t.references :yyy, type: :uuid`.
-- Never use integer IDs, never expose sequential IDs in URLs or payloads.
-- Reviewers must reject any migration that omits `id: :uuid`.
-
-### IV. Service Objects Over Fat Models/Controllers (NON-NEGOTIABLE)
+### III. ApplicationService Pattern (NON-NEGOTIABLE)
 
 All business logic lives in **Service Objects** under `app/services/`.
 
-- Controllers are thin: parse params → call a service → render result. No business rules.
-- Models hold validations, associations, scopes, and simple domain methods — **no orchestration, no external calls**.
-- Every service **MUST**:
-  1. Inherit from `BaseService` (defined at `app/services/base_service.rb`).
-  2. Expose a `.call(...)` class method (provided by `BaseService`).
-  3. Return a **`ServiceResult`** object — never raw booleans, never raw models, never raise for control flow.
-  4. Use `success(data)` / `failure(errors, code:)` helpers from `BaseService`.
-- Services are namespaced by domain: `Auth::`, `Agents::`, `Tools::`, `AI::`, `Conversations::`.
-- Controllers consume results via `result.on_success { ... }.on_failure { ... }` or `result.success?` — they do not reach into service internals.
+- Every service inherits **`ApplicationService`** (at `app/services/application_service.rb`).
+- Class method `.call(*args, **kwargs)` is provided by the base.
+- Service returns a **plain object/value** — not a wrapped result type, not raw booleans for control flow.
+- One service = one domain operation.
+- Service does NOT render. The controller renders.
+- Services namespaced by domain: `Auth::`, `User::`, `Order::`, `AI::` (when added), etc.
 
-### V. Single Claude Integration Point — `AI::ClaudeClient` (NON-NEGOTIABLE)
+```ruby
+# Correct usage
+result = CreateOrderService.call(user: current_user, params: order_params)
+```
 
-**All** interaction with Claude AI **MUST** go through `AI::ClaudeClient` (at `app/services/ai/claude_client.rb`).
+### IV. Thin Controllers (NON-NEGOTIABLE)
 
-- No controller, job, model, or other service may call the Anthropic SDK, Faraday, or the Claude HTTP API directly.
-- `ClaudeClient` is a Singleton. It owns: retries, timeouts, streaming, token accounting, error normalization (`ClaudeClient::ApiError`).
-- Supporting collaborators — `AI::PromptBuilder`, `AI::ResponseParser`, `AI::TokenCounter`, `AI::StreamingHandler` — live in the same namespace and are the only classes allowed to touch Claude-specific payload shapes.
-- New agent behaviors (Claude, OpenAI fallback, future providers) go through `Agents::BaseAgent` subclasses that delegate to `AI::ClaudeClient`. Do not fan providers out across the codebase.
-- Default model: `claude-sonnet-4-20250514`. Allowed models are the whitelist in `AgentConfig::AVAILABLE_MODELS`.
+- Each controller has at most **7 actions** (CRUD + 2 custom).
+- Action body: parse params → `authorize` (Pundit) → call service → render with serializer.
+- No business rules in controllers.
+- Inheritance chain: `ApplicationController` (`ActionController::API`) → `Api::V1::BaseController` → `Api::V1::<Resource>Controller`.
+- `ApplicationController` includes: `ErrorHandler`, `ResponseHandler`, `Pagy::Backend`, `before_action :authenticate_user!`.
 
-### VI. Frontend: Component Framework + Tailwind + Centralized State
+### V. Background Jobs (Solid Queue + Sidekiq)
 
-The frontend uses **Vue 3 (Composition API)** or **React (Hooks)** — pick one per app and stay consistent.
+Two job systems, used for different purposes:
 
-- **Styling:** **Tailwind CSS** only. No ad-hoc CSS files, no CSS-in-JS, no second UI kit unless added via amendment.
-- **State management:** centralized store — **Pinia** for Vue, **Zustand** or **Redux Toolkit** for React. Component-local `ref`/`useState` is allowed for purely local UI state; anything shared across routes/components goes in the store.
-- **API access:** one shared HTTP client wrapper (e.g. `src/lib/apiClient.ts`) that attaches JWT, handles 401 refresh, and normalizes errors. Components do not call `fetch`/`axios` directly.
-- **Server state:** use TanStack Query (React) or `@tanstack/vue-query` (Vue) for server-cache concerns; do not reinvent caching in the store.
-- **Routing:** Vue Router / React Router with route-level code splitting.
+- **Solid Queue** (Rails 8 built-in) — default for ActiveJob-based async work. No Redis dependency. Use for lightweight fire-and-forget tasks (notifications, audit logging).
+- **Sidekiq 8** + **Redis** — for jobs needing Redis-backed retry, scheduling (`sidekiq-scheduler`), or high-throughput. All Sidekiq workers inherit `BaseWorker` (`retry: 5`, `queue: default`).
 
-### VII. Testing & Code Quality (NON-NEGOTIABLE)
+```ruby
+class SomeWorker < BaseWorker
+  def perform(arg)
+    # job logic
+  end
+end
+```
 
-- **RSpec is mandatory** for every new Service Object. A service without a spec is not considered complete and must not be merged.
-- Spec coverage expected: happy path, each documented failure mode, and any side effects (DB writes, job enqueues, external calls stubbed with WebMock/VCR).
-- Models: validations and non-trivial methods require specs.
-- Controllers: request specs for each endpoint.
-- External HTTP (Claude, third-party) **must** be stubbed with WebMock or recorded with VCR — never hit real APIs in CI.
-- **Rubocop** (with `rubocop-rails` + `rubocop-rspec`) must pass with zero offenses before merge. No `# rubocop:disable` without a one-line justification comment.
-- **Brakeman** and **bundler-audit** run in CI; high-severity findings block merge.
-- Frontend: lint (ESLint) + typecheck (TypeScript) must pass; component tests for shared components.
+Sidekiq Web UI mounted at `/sidekiq` (protected). Scheduled jobs in `config/recurring.yml`.
+
+### VI. External HTTP via Faraday (NON-NEGOTIABLE)
+
+All external HTTP calls (SSO, third-party APIs, AI providers) go through **Faraday + faraday-retry** with exponential backoff.
+
+- Encapsulate every external integration in an `ApplicationService` subclass.
+- Reference pattern: `UserAuthenticationService` for SSO.
+- Future `AI::ClaudeClient` (when AI feature is specced) follows the same pattern.
+- **WebMock** stubs all external HTTP in tests. Never hit real APIs in CI.
+
+### VII. Data Layer Conventions
+
+- All models inherit `ApplicationRecord`.
+- **Soft delete** via `discard` gem (NOT `paranoia`, NOT `acts_as_paranoid`).
+- **Audit trail** via `paper_trail` — mandatory for fintech/regulated data; tracks every change.
+- **Filtering / search** via `ransack` (whitelist-based — explicitly declare `ransackable_attributes`).
+- **Pagination** via `pagy` (default 25, max 100). NOT kaminari, NOT will_paginate.
+- Shared model behavior in `app/models/concerns/` (e.g., soft delete, audit).
+- Primary keys: Rails default (integer / bigint). UUID only when a feature spec explicitly requires it.
+
+### VIII. Serialization & Response Format
+
+- **jsonapi-serializer** — one serializer per model.
+- Success response:
+  ```json
+  {
+    "success": true,
+    "code": "success",
+    "data": { ... },
+    "pagination": { "current_page": 1, "total_pages": 5 },
+    "total": 100
+  }
+  ```
+- Error response:
+  ```json
+  {
+    "success": false,
+    "code": "validation_error",
+    "errors": [{ "field": "email", "message": "is invalid" }]
+  }
+  ```
+
+### IX. Error Handling
+
+- Custom error classes in `lib/errors/` inheriting `ApplicationError`.
+- Centralized `rescue_from` in `ApplicationController` via `ErrorHandler` concern.
+- Standard mapping:
+  - `ActiveRecord::RecordInvalid` → 422 Unprocessable Entity
+  - `ActiveRecord::RecordNotFound` → 404 Not Found
+  - `Pundit::NotAuthorizedError` → 403 Forbidden
+  - `Pagy::OverflowError` → 200 (empty data)
+  - `StandardError` → 500 + Bugsnag report (production only)
+
+### X. Testing & Code Quality (NON-NEGOTIABLE)
+
+- **RSpec** (`rspec-rails` 8) for every layer. SimpleCov coverage **≥ 95%**.
+- **FactoryBot** for test data; `shoulda-matchers` for one-liner Rails matchers.
+- **WebMock** for HTTP stubbing — every external call must be stubbed.
+- **rubocop-rails-omakase** (NOT plain `rubocop-rails`):
+  - Target Ruby 3.4
+  - Max line length 120
+  - Method ≤ 20 lines, Class ≤ 200 lines, Block ≤ 25 lines
+  - ABC complexity ≤ 30, Cyclomatic ≤ 10
+  - ≤ 3 positional params (use keyword args beyond)
+- **Brakeman** + **bundler-audit** in CI — zero warnings allowed.
+- **Bullet** in dev — flag N+1 queries.
+- Every new service requires an RSpec; every new model requires validation specs.
+
+### XI. Internationalization
+
+- Locales: `en.yml` + `ja.yml` + `api.yml` (API error codes & messages).
+- All user-facing strings + API error messages must be i18n'd.
+- Default locale: English; secondary: Japanese.
+
+### XII. Deployment & Performance
+
+- **Docker** multi-stage (base / build / production) with `ruby:3.4.9-slim`.
+- Memory: **jemalloc** via `LD_PRELOAD`.
+- **Kamal 2** (`kamal-2.11.0`) for SSH-based Docker deployment. Config in `config/deploy.yml`.
+- **Thruster** for HTTP caching/compression in front of Puma.
+- **Bootsnap** for boot-time caching.
+- Container runs as non-root user (uid 1000).
+
+### XIII. API Versioning
+
+- All endpoints under `/api/v1/...`.
+- Routes split into `config/routes/api/v1.rb` (NOT monolithic `routes.rb`).
+- Controller namespace: `Api::V1::<Resource>Controller`.
+- Future versions add `config/routes/api/v2.rb` + `Api::V2::*` — never break v1.
 
 ---
 
 ## Technology Stack (Locked)
 
-| Layer | Choice | Notes |
+| Category | Technology | Version |
 |---|---|---|
-| Ruby | 3.3.0 | pinned in `.ruby-version` |
-| Backend framework | Rails 7.1 API-only | `--api`, no views/mailer/storage |
-| Database | PostgreSQL | UUID PKs everywhere |
-| Background jobs | Sidekiq 7 + Redis | `ApplicationJob` base |
-| Auth | JWT (`Auth::JwtService`) + Devise + Pundit | access + refresh token pair |
-| AI SDK | `anthropic` gem via `AI::ClaudeClient` | Singleton, Faraday + retry |
-| Serialization | `jsonapi-serializer` | one serializer per exposed model |
-| Validation | `dry-validation` / `dry-types` for complex input | model validations for DB-level |
-| Events | `wisper` | domain events from services |
-| Rate limit | `rack-attack` | configured in initializer |
-| Monitoring | `lograge` + Sentry | structured logs |
-| Testing | RSpec, FactoryBot, Faker, WebMock, VCR, SimpleCov | |
-| Lint/Security | Rubocop, Brakeman, bundler-audit | CI-enforced |
-| Frontend | Vue 3 (Composition) **or** React (Hooks) | one per app |
-| Frontend build | Vite | |
-| Styling | Tailwind CSS | exclusive |
-| State | Pinia / Zustand / Redux Toolkit | centralized |
-| Server cache | TanStack Query | |
+| Language | Ruby | 3.4.9 |
+| Framework | Rails | 8.1.3 (API-only) |
+| Database | PostgreSQL | 16 |
+| Cache | Solid Cache | (Rails 8 built-in) |
+| Job Queue | Solid Queue | (Rails 8 built-in) |
+| WebSocket | Solid Cable | (Rails 8 built-in) |
+| Background Jobs | Sidekiq | 8.1.2 |
+| In-memory Store | Redis | 5.4.1 |
+| Web Server | Puma | ≥ 5.0 |
+| Deployment | Kamal | 2.11.0 |
+| Container | Docker (multi-stage + jemalloc) | — |
+
+### Required Gems
+
+| Gem | Version | Purpose |
+|---|---|---|
+| `pg` | 1.6.3 | PostgreSQL adapter |
+| `jsonapi-serializer` | 2.2.0 | Response format |
+| `rack-cors` | latest | CORS |
+| `rswag-api` / `rswag-ui` / `rswag-specs` | 2.17.0 | Swagger/OpenAPI from RSpec |
+| `pundit` | 2.5.2 | Authorization |
+| `faraday` / `faraday-retry` | 2.14 / 2.4 | External HTTP |
+| `ransack` | 4.4.1 | Filtering (whitelist) |
+| `pagy` | 43.4.4 | Pagination |
+| `discard` | 1.4.0 | Soft delete |
+| `paper_trail` | 17.0.0 | Audit trail |
+| `sidekiq` | 8.1.2 | Background jobs |
+| `sidekiq-scheduler` | latest | Cron-like jobs |
+| `redis` | 5.4.1 | Cache + Sidekiq backend |
+| `bugsnag` | 6.29.0 | Error tracking (production) |
+| `lograge` | 0.14.0 | JSON structured logging |
+| `kamal` | 2.11.0 | Deployment |
+| `thruster` | latest | HTTP caching |
+| `bootsnap` | latest | Boot caching |
+| `image_processing` | ~1.2 | Image processing |
+
+### Dev / Test Gems
+
+| Gem | Group | Purpose |
+|---|---|---|
+| `rspec-rails` | test | Testing framework |
+| `factory_bot_rails` | test | Test data |
+| `shoulda-matchers` | test | Rails matchers |
+| `simplecov` | test | Coverage (≥ 95%) |
+| `webmock` | test | HTTP stubbing |
+| `pry-rails` | dev | Console |
+| `debug` | dev | Debugger |
+| `bullet` | dev | N+1 detection |
+| `annotate` | dev | Auto-annotate models |
+| `rubocop-rails-omakase` | dev | Lint |
+| `brakeman` | dev | Security scan |
+| `bundler-audit` | dev | CVE check |
 
 ---
 
-## Folder Structure (Backend — Authoritative)
+## Folder Structure (Authoritative)
 
-Layout mirrors what's declared in the project's architecture document. Agents must place new files in the correct folder:
+Agents must place new files in the correct folder. Layout matches Mizuho Portal Backend exactly.
 
 ```
-app/
-├── controllers/
-│   ├── concerns/            # authenticatable, error_handling, paginatable, renderable
-│   └── api/v1/              # all public endpoints, thin controllers
-├── models/
-│   └── concerns/            # tokenizable, sluggable
-├── services/                # ALL business logic
-│   ├── base_service.rb      # MUST be the superclass of every service
-│   ├── service_result.rb    # MUST be the return type
-│   ├── auth/                # jwt_service, login_service, register_service
-│   ├── agents/              # base_agent, claude_agent, agent_orchestrator
-│   ├── tools/               # base_tool, tool_registry, concrete tools
-│   ├── ai/                  # claude_client (Singleton), prompt_builder, ...
-│   └── conversations/
-├── jobs/                    # Sidekiq workers
-├── serializers/             # jsonapi-serializer classes
-├── policies/                # Pundit policies
-├── validators/              # dry-validation contracts
-└── channels/                # ActionCable (conversation_channel)
+backend/
+├── app/
+│   ├── controllers/
+│   │   ├── application_controller.rb        # Auth, error handling, pagination
+│   │   ├── api/v1/
+│   │   │   └── base_controller.rb           # API v1 base
+│   │   └── concerns/
+│   │       ├── error_handler.rb             # rescue_from definitions
+│   │       └── response_handler.rb          # render_success / render_error
+│   ├── models/
+│   │   ├── application_record.rb
+│   │   └── concerns/                        # Soft delete, audit, etc.
+│   ├── services/
+│   │   ├── application_service.rb           # MUST inherit
+│   │   └── <domain>/                        # auth/, user/, ai/, ...
+│   ├── serializers/                         # 1 per model
+│   ├── workers/
+│   │   └── base_worker.rb                   # Sidekiq base
+│   ├── jobs/
+│   │   └── application_job.rb               # Solid Queue base
+│   ├── mailers/
+│   │   └── application_mailer.rb
+│   └── views/layouts/                       # Mailer templates only
+│
+├── config/
+│   ├── application.rb                       # api_only = true
+│   ├── routes.rb                            # Root routing, Sidekiq mount
+│   ├── routes/api/v1.rb                     # API v1 routes
+│   ├── database.yml                         # writer + reader replica
+│   ├── puma.rb / cable.yml / cache.yml / queue.yml / recurring.yml
+│   ├── deploy.yml                           # Kamal
+│   ├── environments/                        # dev / prod / test
+│   ├── initializers/                        # bugsnag, cors, redis, sidekiq, ...
+│   └── locales/                             # en.yml, ja.yml, api.yml
+│
+├── lib/
+│   ├── errors/
+│   │   ├── application_error.rb             # Custom error base
+│   │   ├── active_record_validation.rb      # 422
+│   │   ├── active_record_not_found.rb       # 404
+│   │   └── runtime.rb
+│   └── tasks/
+│       └── auto_annotate_models.rake
+│
+├── db/
+│   ├── schema.rb
+│   ├── seeds.rb
+│   ├── cable_schema.rb / cache_schema.rb / queue_schema.rb
+│
+├── spec/                                    # RSpec (NOT test/)
+│   ├── controllers/ / models/ / services/ / workers/ / serializers/
+│   ├── factories/
+│   └── rails_helper.rb / spec_helper.rb
+│
+├── docs/                                    # Developer docs
+├── .github/workflows/ci.yml                 # Brakeman + bundler-audit + rubocop + rspec
+├── bin/                                     # rails, rake, setup, dev, jobs, ci, kamal, thrust, rubocop, brakeman, bundler-audit
+├── Dockerfile                               # Multi-stage + jemalloc
+├── docker-compose.yml                       # app + db + redis + sidekiq
+├── Gemfile / Gemfile.lock
+├── .rubocop.yml                             # Inherits rubocop-rails-omakase
+└── .ruby-version                            # 3.4.9
 ```
 
 **Rules:**
-- New business logic → `app/services/<domain>/`. Not controllers, not models, not lib/.
-- New tool for Claude → subclass `Tools::BaseTool`, register via `Tools::ToolRegistry`.
-- New agent behavior → subclass `Agents::BaseAgent`.
+- New business logic → `app/services/<domain>/`. Never controllers, never models, never `lib/`.
+- New external HTTP integration → service inheriting `ApplicationService` using Faraday.
+- New background job → `app/workers/<Name>Worker < BaseWorker` (Sidekiq) OR `app/jobs/<Name>Job < ApplicationJob` (Solid Queue).
+- Custom error → `lib/errors/<name>.rb` inheriting `ApplicationError`.
 - Cross-cutting model behavior → `app/models/concerns/`.
 
 ---
 
-## Mandatory Base Classes & Shared Clients
+## Mandatory Base Classes
 
-These are **required inheritance / delegation points**. Bypassing them is a constitutional violation.
-
-| Base / Client | Location | Rule |
+| Class | Location | Rule |
 |---|---|---|
-| `BaseService` | `app/services/base_service.rb` | Every service **MUST** inherit. |
-| `ServiceResult` | `app/services/service_result.rb` | Every service **MUST** return this type. |
-| `AI::ClaudeClient` | `app/services/ai/claude_client.rb` | Only path to Claude API. Singleton. |
-| `Agents::BaseAgent` | `app/services/agents/base_agent.rb` | Superclass for all agents. |
-| `Tools::BaseTool` | `app/services/tools/base_tool.rb` | Superclass for all tools. |
-| `ApplicationRecord` | `app/models/application_record.rb` | Declares `primary_abstract_class`; all models inherit. |
-| `ApplicationJob` | `app/jobs/application_job.rb` | Superclass for Sidekiq jobs. |
-| `ApplicationPolicy` | `app/policies/application_policy.rb` | Superclass for Pundit policies. |
+| `ApplicationController` | `app/controllers/application_controller.rb` | Inherits `ActionController::API`; includes `ErrorHandler`, `ResponseHandler`, `Pagy::Backend`. Every controller chain starts here. |
+| `Api::V1::BaseController` | `app/controllers/api/v1/base_controller.rb` | All `Api::V1::*` controllers inherit. |
+| `ApplicationRecord` | `app/models/application_record.rb` | Every model inherits. |
+| `ApplicationService` | `app/services/application_service.rb` | **Every service MUST inherit.** Provides `.call(*args, **kwargs)`. |
+| `BaseWorker` | `app/workers/base_worker.rb` | Every Sidekiq worker inherits (`retry: 5`, `queue: default`). |
+| `ApplicationJob` | `app/jobs/application_job.rb` | Every ActiveJob (Solid Queue) inherits. |
+| `ApplicationPolicy` | `app/policies/application_policy.rb` | Every Pundit policy inherits. Default-deny. |
+| `ApplicationError` | `lib/errors/application_error.rb` | Every custom error inherits. |
 
-**Examples of violations (auto-reject in review):**
-- A PORO under `app/services/` that doesn't inherit `BaseService`.
-- A job that calls `Anthropic::Client` directly instead of `AI::ClaudeClient`.
-- A migration that creates a table without `id: :uuid`.
-- A controller that returns `render json: user` instead of going through a serializer + `ServiceResult`.
-- Business logic added to a controller action beyond param parsing and result rendering.
+**Auto-reject patterns in review:**
+
+- A PORO under `app/services/` that does not inherit `ApplicationService`.
+- Service returning a wrapped result type instead of plain object/value.
+- Business logic inside a controller action beyond param parsing + service call + render.
+- A controller with > 7 actions.
+- A new external HTTP call not going through Faraday + an `ApplicationService` subclass.
+- A model without `ransackable_attributes` whitelist when ransack is used.
+- A migration introducing soft-delete columns without using `discard`.
+- A new gem in `Gemfile.lock` not justified in the feature's `plan.md`.
+- An `# rubocop:disable` comment without a one-line justification.
+
+---
+
+## Environment Variables
+
+| Variable | Purpose |
+|---|---|
+| `RAILS_ENV` | development / production / test |
+| `DB_USERNAME`, `DB_PASSWORD` | PostgreSQL credentials |
+| `DB_WRITER_ENDPOINT`, `DB_WRITER_NAME` | Primary DB |
+| `DB_READER_ENDPOINT`, `DB_READER_NAME` | Read replica |
+| `REDIS_URL`, `REDIS_PASSWD` | Redis (cache + Sidekiq) |
+| `APP_HOST` | CORS allowed origin |
+| `RAILS_MASTER_KEY` | Credentials decryption |
+| `RAILS_MAX_THREADS` | Connection pool size (default 5) |
+| `BUGSNAG_API_KEY` | Production error tracking |
+| `ANTHROPIC_API_KEY` | (when AI feature added) |
 
 ---
 
 ## Development Workflow
 
-1. **Spec** — Draft `.specify/specs/<feature>/spec.md`. Get it approved.
-2. **Plan** — Draft `.specify/specs/<feature>/plan.md`. Cite the principles above for each decision. Identify: new/changed migrations, new services, new jobs, new endpoints, new frontend routes/stores, test targets.
-3. **Implement** — Write failing RSpec first for new services (TDD-friendly, not strictly enforced). Implement. Run `bundle exec rspec` + `bundle exec rubocop` + `bundle exec brakeman` locally.
-4. **Review** — Reviewer checks: constitution compliance, UUID use, `BaseService`/`ServiceResult` use, `AI::ClaudeClient` use, test coverage, Rubocop clean, no direct external HTTP.
-5. **Merge** — Only when all gates pass.
+1. **Spec** — `.specify/specs/<feature>/spec.md`. PM (John).
+2. **Clarify** (if needed) — BA (Riley).
+3. **UX** (if frontend) — UX (Sally).
+4. **Plan** — `.specify/specs/<feature>/plan.md` citing this constitution. Architect (Winston).
+5. **Implement** — TDD: failing RSpec → minimum code → green → rubocop → brakeman. Dev (Amelia).
+6. **Audit** — `qa-report.md`. QA (Murphy). Verify against constitution + manual scenario walk.
+7. **PR** — `speckit-git-remote` opens PR. CI runs Brakeman + bundler-audit + rubocop + rspec.
 
-**Agent-specific reminders:**
-- `Explore` — when asked "how does X work?", cite actual file paths; do not hallucinate classes.
-- `Plan` — must reference this constitution by section number for each architectural choice.
-- Implementer agents — must halt if asked to put business logic outside `app/services/` or to bypass `AI::ClaudeClient`.
+**Local commands:**
+
+```bash
+docker-compose up -d                          # start app + db + redis + sidekiq
+docker-compose exec app rails db:create db:migrate db:seed
+docker-compose exec app rails console
+bundle exec rspec                             # tests
+bin/rubocop                                   # lint
+bin/brakeman -A -w1 ./                        # security
+bin/bundler-audit                             # CVE check
+```
+
+---
+
+## AI Extension (when added — not yet specced)
+
+When AI features are specced through the SDD process, they MUST follow the conventions above:
+
+- Anthropic API calls → ONE service `AI::ClaudeClient` inheriting `ApplicationService`, using Faraday + faraday-retry per § VI.
+- All AI integration code in `app/services/ai/`.
+- AI background work via Sidekiq `BaseWorker` per § V (long-running, retry-needed).
+- Models like `AgentConfig`, `Conversation`, `Message` follow data layer conventions § VII (paper_trail audit, discard soft delete, ransack filterable).
+- WebMock stubs all Anthropic HTTP in tests per § X.
+- Token cost & rate limits enforced inside `AI::ClaudeClient` (circuit breaker pattern).
+
+The specific data model + endpoints for AI are NOT pre-prescribed here — they emerge from individual feature specs.
 
 ---
 
@@ -187,8 +382,8 @@ These are **required inheritance / delegation points**. Bypassing them is a cons
 
 - This constitution **supersedes** ad-hoc conventions, inline comments, and individual preferences.
 - **Amendments** require: (a) a proposal PR touching only this file, (b) a migration plan for existing code that would become non-compliant, (c) approval before merge.
-- **Exceptions** (one-off deviations) must be declared in the feature's `plan.md` under a `## Constitutional Deviations` heading, with justification and scope.
-- All PRs and code reviews **must verify compliance** with sections I–VII.
-- Complexity or new dependencies must be justified against Principle I (SDD) and Section "Technology Stack (Locked)".
+- **Exceptions** (one-off deviations) must be declared in the feature's `plan.md` under a `## Constitutional Deviations` heading, with justification + scope.
+- All PRs and code reviews must verify compliance with sections I–XIII.
+- Complexity or new dependencies must be justified against this constitution and the feature's plan.
 
-**Version**: 1.0.0 | **Ratified**: 2026-04-13 | **Last Amended**: 2026-04-13
+**Version**: 2.0.0 | **Ratified**: 2026-04-13 | **Last Amended**: 2026-04-13 (rewrite to align with Mizuho Portal Backend standard)

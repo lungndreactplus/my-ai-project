@@ -9,6 +9,6 @@
     "baseline": "promptfoo eval --output baseline.json"
   },
   "devDependencies": {
-    "promptfoo": "^0.92.0"
+    "promptfoo": "^0.110.0"
   }
 }

@@ -22,15 +22,21 @@ jobs:
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           prompt: |
-            Review this PR against .specify/memory/constitution.md. Produce an inline-comment review.
+            Review this PR against .specify/memory/constitution.md (Mizuho Portal standard). Produce an inline-comment review.
 
             MANDATORY CHECKS (fail the job if any violation is found):
 
-            1. § III — Every new migration uses `id: :uuid` and every `t.references` uses `type: :uuid`.
-            2. § IV — Every new file under backend/app/services/ inherits BaseService and returns ServiceResult. Controllers stay thin (no business logic).
-            3. § V — No direct Anthropic SDK, Faraday, or HTTP call to the Claude API outside backend/app/services/ai/claude_client.rb.
-            4. § VI — Frontend changes use Tailwind only, the centralized store, and the shared apiClient wrapper. No bare fetch/axios in components.
-            5. § VII — Every new service has an accompanying RSpec. External HTTP is stubbed with WebMock or VCR. Rubocop clean.
-            6. If the branch name or PR title references a feature under .specify/specs/, verify the diff is consistent with that feature's plan.md — flag any scope creep.
+            1. § II — Ruby 3.4.9 / Rails 8.1.3 API-only. .ruby-version pinned. No views, no session middleware.
+            2. § III — Every new file under backend/app/services/ inherits `ApplicationService`. Returns plain object/value (no wrapper type).
+            3. § IV — Controllers thin (≤ 7 actions). Action body only: parse params → Pundit authorize → service call → serializer render. No business logic.
+            4. § V — Background jobs use BaseWorker (Sidekiq) or ApplicationJob (Solid Queue). No raw Sidekiq::Worker include, no ad-hoc Thread.new.
+            5. § VI — All external HTTP via Faraday + faraday-retry, encapsulated in an ApplicationService subclass. No Net::HTTP, no raw SDK calls in controllers/jobs.
+            6. § VII — Pagination uses pagy (not kaminari/will_paginate). Soft delete uses discard (not paranoia). Audit via paper_trail. Ransack uses ransackable_attributes whitelist.
+            7. § VIII — jsonapi-serializer per model. Response format matches { success, code, data, pagination?, total? } / { success: false, code, errors }.
+            8. § IX — Custom errors in lib/errors/ inheriting ApplicationError. ErrorHandler concern handles rescue_from.
+            9. § X — Every new service has an RSpec. External HTTP stubbed with WebMock. SimpleCov coverage stays ≥ 95%. rubocop-rails-omakase passes. Brakeman + bundler-audit zero warnings.
+            10. § XIII — Routes added in config/routes/api/v1.rb (NOT monolithic routes.rb). Controller namespace Api::V1::*.
+            11. Frontend (§ VI of frontend rules — Tailwind, central store, shared apiClient).
+            12. If the branch name or PR title references a feature under .specify/specs/, verify the diff is consistent with that feature's plan.md — flag any scope creep.
 
             Comment on each violation inline with the specific file:line and the section number it violates. End with an overall verdict: APPROVE / REQUEST CHANGES / REJECT.

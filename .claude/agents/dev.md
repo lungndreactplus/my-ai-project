@@ -42,16 +42,22 @@ Return control to the Manager immediately if ANY of these is missing:
 
 Do not improvise around missing artifacts. Ask the Manager to route to `pm` or `architect` first.
 
-## Hard Rules (Auto-Reject on Violation)
+## Hard Rules (Auto-Reject on Violation — Mizuho standard)
 
-- No migration without `id: :uuid` and `type: :uuid` on every `t.references`.
 - No business logic outside `app/services/<domain>/`.
-- No service that does not inherit `BaseService` or does not return `ServiceResult`.
-- No direct Anthropic SDK / Faraday / raw HTTP call to Claude — all go through `AI::ClaudeClient`.
+- No service that does not inherit `ApplicationService`.
+- No service wrapping return in a result type — return plain object/value.
+- No external HTTP outside Faraday + `ApplicationService` subclass. No raw `Net::HTTP`, no SDK calls in controllers/jobs.
+- No controller > 7 actions. No business logic in controllers.
+- No `kaminari` / `will_paginate` — use `pagy`.
+- No `paranoia` / `acts_as_paranoid` — use `discard`.
+- No `Sentry` — use `Bugsnag`.
 - No frontend component calling `fetch` / `axios` directly — all go through the shared `apiClient`.
 - No CSS file, no CSS-in-JS, no second UI kit — Tailwind only.
 - No new gem or npm package unless the approved plan lists it with rationale.
-- No external HTTP hit in specs. Stub with WebMock or record with VCR.
+- No external HTTP hit in specs. Stub with WebMock.
+- No model with ransack filtering missing `ransackable_attributes` whitelist.
+- No `# rubocop:disable` without a one-line justification comment.
 
 ## Capabilities
 
@@ -68,14 +74,18 @@ Do not improvise around missing artifacts. Ask the Manager to route to `pm` or `
 2. **RSpec first** — write a failing spec for the behavior. Run it, confirm red.
 3. Implement the minimum code to turn it green.
 4. Re-run the relevant suite: `bundle exec rspec spec/services` (or broader).
-5. Quality gates: `bundle exec rubocop` (zero offenses), `bundle exec brakeman` (no high-severity).
+5. Quality gates (Mizuho standard):
+   - `bin/rubocop` — rubocop-rails-omakase, zero offenses.
+   - `bin/brakeman -A -w1 ./` — zero warnings.
+   - `bin/bundler-audit` — no CVE.
+   - SimpleCov coverage ≥ 95%.
 6. Frontend: `npm run lint && npm run typecheck && npm test`.
 7. Mark task done in `tasks.md`. Append to Dev Notes.
 8. Invoke `speckit-git-commit`.
 
 ## On Activation
 
-1. Load `.specify/memory/constitution.md` § IV, V, VII.
+1. Load `.specify/memory/constitution.md` § II–XIII (Mizuho standard).
 2. Load the feature's `spec.md`, `plan.md`, `tasks.md`.
 3. If any artifact missing → halt and report.
 4. Greet briefly. Present Capabilities table.
@@ -87,4 +97,4 @@ When every task is checked and all quality gates green → hand off to `qa` (Mur
 
 ## Reference
 
-[.specify/memory/constitution.md](../../.specify/memory/constitution.md) § IV, V, VII.
+[.specify/memory/constitution.md](../../.specify/memory/constitution.md) § II–XIII (Mizuho Portal Backend standard).

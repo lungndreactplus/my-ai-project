@@ -12,7 +12,7 @@ This is a **two-app monorepo** with a 5-layer agent stack bolted on top of Spec-
 
 ```
 my-ai-project/
-├── backend/                 # Rails 7.1 API-only (Ruby 3.3.0, PostgreSQL, UUID PKs)
+├── backend/                 # Rails 8.1 API-only (Ruby 3.4.9, PostgreSQL 16) — Mizuho Portal standard
 ├── frontend/                # Vue 3 or React SPA (Vite + Tailwind + centralized store)
 ├── evals/                   # L3 — promptfoo prompt-regression suite
 ├── .specify/
@@ -32,21 +32,27 @@ my-ai-project/
 
 ## Build & Install
 
-### Backend (`backend/`)
+### Backend (`backend/`) — Mizuho stack (Ruby 3.4.9 / Rails 8.1.3)
+
+Local dev via Docker Compose (recommended):
 
 ```bash
 cd backend
-bundle install                     # install gems
-bin/rails db:create db:migrate     # create + migrate PostgreSQL
-bin/rails db:seed                  # optional seed data
-cp .env.example .env               # then fill ANTHROPIC_API_KEY, JWT_SECRET_KEY, REDIS_URL
+cp .env.example .env                                   # fill DB + Redis + Bugsnag + Anthropic keys
+docker-compose up -d                                   # app + postgres:16 + redis + sidekiq
+docker-compose exec app bin/setup                      # bundle install + db:create db:migrate db:seed
+docker-compose exec app bin/rails console              # console
+docker-compose logs -f app                             # tail logs
 ```
 
-Run the server + workers:
+Bare-metal (if Ruby 3.4.9 + PG 16 + Redis are installed locally):
 
 ```bash
-bin/rails s                        # API on :3000
-bundle exec sidekiq                # background jobs (requires Redis running)
+bundle install
+bin/rails db:create db:migrate db:seed
+bin/rails s                                            # API on :3000
+bin/jobs                                               # Solid Queue worker
+bundle exec sidekiq                                    # Sidekiq worker (Redis required)
 ```
 
 ### Frontend (`frontend/`)
@@ -63,20 +69,20 @@ npm run build                      # production build
 
 ## Test & Quality Commands
 
-### Backend — RSpec, Rubocop, Brakeman
+### Backend — RSpec, RuboCop (omakase), Brakeman, Bundler-Audit
 
 ```bash
 cd backend
-bundle exec rspec                          # full suite
+bundle exec rspec                          # full suite (SimpleCov ≥ 95%)
 bundle exec rspec spec/services            # service specs only
 bundle exec rspec spec/path/to_spec.rb:42  # single example
-bundle exec rubocop                        # lint — must pass with zero offenses
-bundle exec rubocop -A                     # auto-fix safe offenses
-bundle exec brakeman                       # security scan
-bundle exec bundler-audit check --update   # CVE check on gems
+bin/rubocop                                # rubocop-rails-omakase — zero offenses
+bin/rubocop -A                             # auto-fix all (review before commit)
+bin/brakeman -A -w1 ./                     # security scan — zero warnings
+bin/bundler-audit                          # CVE check on gems
 ```
 
-**Per constitution § VII:** every new Service Object requires an RSpec. External HTTP (Claude, third-party) MUST be stubbed with WebMock or recorded with VCR — never hit real APIs in CI.
+**Per constitution § X:** every new Service Object requires an RSpec. External HTTP (SSO, Anthropic, third-party) MUST be stubbed with WebMock — never hit real APIs in CI. SimpleCov coverage must stay ≥ 95%.
 
 ### Frontend — Vitest / Jest, ESLint, TypeScript
 
@@ -133,9 +139,9 @@ Agents MUST invoke the matching `speckit-*` skill at each phase instead of impro
 
 1. `speckit-specify` → write the spec. Do not skip. Trivial bug fixes (typo, nil-check) may skip this one step — everything else requires it.
 2. `speckit-clarify` → if the spec has open questions.
-3. `speckit-plan` → write the plan. Cite constitution principles (I–VII) for each architectural decision. Call out every affected file.
+3. `speckit-plan` → write the plan. Cite constitution principles (I–XIII) for each architectural decision. Call out every affected file.
 4. `speckit-tasks` → decompose the plan.
-5. `speckit-implement` → write the code and RSpec. Run `bundle exec rspec` + `bundle exec rubocop` before declaring done.
+5. `speckit-implement` → write the code and RSpec. Run `bundle exec rspec` + `bin/rubocop` + `bin/brakeman` before declaring done.
 6. `speckit-analyze` → audit the diff against spec + constitution.
 7. `speckit-git-commit` / `speckit-git-remote` → commit and open PR.
 
@@ -194,21 +200,31 @@ Example: `#explore:thorough Auth::JwtService usage` or `#research:worktree migra
 
 ---
 
-## Non-Negotiable Constitutional Rules (summary)
+## Non-Negotiable Constitutional Rules (summary — Mizuho standard)
 
 These come from [.specify/memory/constitution.md](.specify/memory/constitution.md). Read the full document for detail.
 
-- **§ III** — Every DB table uses UUID primary keys and UUID FKs. Migrations without `id: :uuid` are rejected.
-- **§ IV** — All business logic lives in `app/services/<domain>/`, inherits `BaseService`, returns `ServiceResult`. Controllers stay thin.
-- **§ V** — Every call to Claude AI goes through `AI::ClaudeClient` (Singleton). No direct SDK/HTTP calls from controllers, jobs, or other services.
-- **§ VI** — Frontend uses Tailwind only, centralized store (Pinia / Zustand / Redux Toolkit), and one shared `apiClient` wrapper. No direct `fetch`/`axios` in components.
-- **§ VII** — RSpec mandatory for new services. Rubocop clean. External HTTP stubbed with WebMock/VCR.
+- **§ II** — Ruby 3.4.9, Rails 8.1.3 API-only, PostgreSQL 16 (writer + reader replica), Solid Queue + Sidekiq.
+- **§ III** — All business logic in `app/services/<domain>/`, inherits **`ApplicationService`**, returns **plain object/value** (NOT a wrapper type).
+- **§ IV** — Controllers thin, ≤ 7 actions, inherit `Api::V1::BaseController`. Action body: parse params → Pundit `authorize` → service call → serializer render.
+- **§ V** — Background: Solid Queue (default) for ActiveJob; Sidekiq + `BaseWorker` (retry: 5) for retry/scheduling.
+- **§ VI** — All external HTTP via Faraday + faraday-retry, encapsulated in an `ApplicationService` subclass. WebMock stubs in tests.
+- **§ VII** — Data layer: `discard` (soft delete), `paper_trail` (audit), `ransack` (filter, whitelist), `pagy` (pagination).
+- **§ VIII** — `jsonapi-serializer` per model. Standard `{ success, code, data, pagination?, total? }` / error response shape.
+- **§ IX** — Custom errors in `lib/errors/` inheriting `ApplicationError`. `ErrorHandler` concern handles rescue_from.
+- **§ X** — RSpec mandatory; SimpleCov ≥ 95%; `rubocop-rails-omakase` clean; Brakeman + bundler-audit zero warnings.
+- **§ XI** — i18n: `en.yml` + `ja.yml` + `api.yml`.
+- **§ XII** — Deploy: Docker multi-stage + jemalloc, Kamal 2, Thruster, Bootsnap.
+- **§ XIII** — Routes split into `config/routes/api/v1.rb`. Controller namespace `Api::V1::*`.
+- **Frontend** — Tailwind only, centralized store (Pinia / Zustand / Redux Toolkit), shared `apiClient`. No direct `fetch`/`axios` in components.
 
 **Auto-reject patterns in review:**
-- PORO under `app/services/` that does not inherit `BaseService`.
-- Any `Anthropic::Client` / `Faraday.post` to Claude outside `AI::ClaudeClient`.
-- Migration missing `id: :uuid`.
-- Business logic in a controller action.
+- A PORO under `app/services/` that does not inherit `ApplicationService`.
+- Service wrapping return in a custom result type — return plain values.
+- External HTTP outside Faraday + an `ApplicationService` subclass (no raw `Net::HTTP`, no SDK calls in controllers/jobs).
+- Controller > 7 actions, or business logic inside a controller action.
+- `kaminari` / `will_paginate` (use `pagy`); `paranoia` (use `discard`); `Sentry` (use `Bugsnag`); `rubocop-rails` (use `rubocop-rails-omakase`).
+- Model with ransack filtering missing `ransackable_attributes` whitelist.
 - New gem or npm dependency added without Plan-level justification.
 
 ---
@@ -224,13 +240,13 @@ These come from [.specify/memory/constitution.md](.specify/memory/constitution.m
 
 ## CI / Ops (L5)
 
-- **`.github/workflows/claude-code-review.yml`** — runs the official `anthropics/claude-code-action` on every PR. Reviews diff against the constitution (§ III, IV, V, VI, VII) and the feature's `plan.md`. Block merge on violation. Requires `secrets.CLAUDE_CODE_OAUTH_TOKEN`.
+- **`.github/workflows/claude-code-review.yml`** — runs the official `anthropics/claude-code-action` on every PR. Reviews diff against the constitution (§ II–XIII) and the feature's `plan.md`. Block merge on violation. Requires `secrets.CLAUDE_CODE_OAUTH_TOKEN`.
 - **`.mcp.json`** — registers the GitHub MCP server so agents can create/read issues, comment on PRs, and open PRs. Requires `GITHUB_TOKEN` env var. Add Linear / Jira MCP here if the team uses them.
 - Task sync: the `speckit-taskstoissues` skill pushes `tasks.md` → GitHub Issues via the GitHub MCP.
 
 ## Deferred Layers
 
-- **L4 Observability** (Langfuse tracing on `AI::ClaudeClient`) — add once `backend/` is scaffolded. Wrap `chat(...)` in a Langfuse span capturing input/output/token usage/cost. See constitution § V for the single integration point.
+- **L4 Observability** (Langfuse tracing) — add when AI feature is specced. Wrap the `AI::ClaudeClient` (an `ApplicationService` subclass per § VI) `chat(...)` method in a Langfuse span capturing input/output/token usage/cost.
 - **L1 Execution Engine** (TDD hooks, worktree isolation for parallel features) — add once ≥ 3 features run in parallel or the team grows. Worktree isolation available today via `isolation: "worktree"` on the `Agent` tool.
 
 ## No-Shortcut Fallback

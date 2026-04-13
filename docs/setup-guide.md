@@ -2,7 +2,7 @@
 
 > Hướng dẫn dựng lại toàn bộ dự án này từ con số 0 cho người chưa quen với AI agent. Đi tuần tự từ trên xuống dưới, không bỏ bước.
 
-**Project name:** `my-ai-project` — một AI team agent cho dự án Rails 7.1 + Vue/React, gồm 5 layer: Spec-kit (L0) + Personas (L2) + Evals (L3) + Observability (L4 — deferred) + Ops/CI (L5).
+**Project name:** `my-ai-project` — một AI team agent cho dự án Rails 8.1.3 + Vue/React, theo chuẩn **Mizuho Portal Backend**, gồm 5 layer: Spec-kit (L0) + Personas (L2) + Evals (L3) + Observability (L4 — deferred) + Ops/CI (L5).
 
 **Thời gian dự kiến:** ~3 giờ cho người mới.
 
@@ -38,10 +38,11 @@
 
 > **Mac/Linux:** dùng `brew install node git python uv` rồi `npm install -g @anthropic-ai/claude-code`.
 
-Sau này (chỉ cần khi bắt đầu code backend/frontend thật):
-- **Ruby 3.3.0** + **Bundler** — cho backend Rails
-- **PostgreSQL 14+** — database
-- **Redis 7+** — Sidekiq queue
+Sau này (chỉ cần khi bắt đầu code backend/frontend thật) — **Mizuho stack**:
+- **Ruby 3.4.9** + **Bundler** — cho backend Rails 8.1.3 (RubyInstaller cho Windows hoặc WSL)
+- **PostgreSQL 16** — database (writer + reader replica)
+- **Redis 5.4+** — Sidekiq + cache
+- **Docker Desktop** — chạy `docker-compose up -d` cho local dev (recommended)
 
 ### 0.2 Đăng ký + lấy 3 API key
 
@@ -212,17 +213,23 @@ ls .claude/skills/
 
 Đây là **luật bất di bất dịch** của dự án. Spec-kit chỉ tạo template — bạn phải tự viết nội dung.
 
-Mở `.specify/memory/constitution.md`, copy mẫu từ repo này (~ 200 dòng), gồm 7 nguyên tắc:
+Mở `.specify/memory/constitution.md`, copy mẫu từ repo này (~ 300 dòng), theo chuẩn **Mizuho Portal Backend** (13 sections):
 
 - **§ I** — Spec-Driven Development (NON-NEGOTIABLE)
-- **§ II** — Rails 7.1 API-only / Ruby 3.3.0
-- **§ III** — UUID Primary Keys (NON-NEGOTIABLE)
-- **§ IV** — Service Objects → BaseService → ServiceResult (NON-NEGOTIABLE)
-- **§ V** — Single Claude Integration Point — `AI::ClaudeClient` (NON-NEGOTIABLE)
-- **§ VI** — Frontend: Tailwind + Centralized State + apiClient
-- **§ VII** — Testing & Code Quality (NON-NEGOTIABLE)
+- **§ II** — Rails 8.1.3 / Ruby 3.4.9 / PostgreSQL 16 (NON-NEGOTIABLE)
+- **§ III** — `ApplicationService` Pattern, return plain object/value (NON-NEGOTIABLE)
+- **§ IV** — Thin Controllers ≤ 7 actions (NON-NEGOTIABLE)
+- **§ V** — Background Jobs: Solid Queue + Sidekiq `BaseWorker`
+- **§ VI** — External HTTP via Faraday + faraday-retry (NON-NEGOTIABLE)
+- **§ VII** — Data Layer: discard, paper_trail, ransack, pagy
+- **§ VIII** — Serialization: jsonapi-serializer + standard response shape
+- **§ IX** — Error Handling: `lib/errors/` + `ApplicationError` + `ErrorHandler` concern
+- **§ X** — Testing & Code Quality: RSpec, SimpleCov ≥ 95%, rubocop-rails-omakase (NON-NEGOTIABLE)
+- **§ XI** — i18n: en + ja + api locales
+- **§ XII** — Deploy: Docker + jemalloc + Kamal 2 + Thruster
+- **§ XIII** — API Versioning: `config/routes/api/v1.rb`, `Api::V1::*` namespace
 
-Cộng các section: Technology Stack (Locked), Folder Structure (Authoritative), Mandatory Base Classes, Development Workflow, Governance.
+Cộng các section: Technology Stack (Locked), Folder Structure (Authoritative), Mandatory Base Classes, Environment Variables, Development Workflow, AI Extension (when added), Governance.
 
 > Nội dung cụ thể: copy nguyên file `.specify/memory/constitution.md` từ repo `my-ai-project` này.
 
@@ -230,12 +237,12 @@ Cộng các section: Technology Stack (Locked), Folder Structure (Authoritative)
 
 CLAUDE.md là **handbook vận hành** — Claude Code đọc file này tự động. Phải có:
 
-1. **Project Context** — sơ đồ monorepo.
-2. **Build & Install** — lệnh cho backend (`bundle install`), frontend (`npm install`), evals.
-3. **Test & Quality** — `bundle exec rspec`, `bundle exec rubocop`, `npm test`, `npm run eval`.
+1. **Project Context** — sơ đồ monorepo (Rails 8.1 / Ruby 3.4.9 — Mizuho).
+2. **Build & Install** — lệnh cho backend (`docker-compose up -d` hoặc `bundle install`), frontend (`npm install`), evals.
+3. **Test & Quality** — `bundle exec rspec`, `bin/rubocop`, `bin/brakeman -A -w1 ./`, `bin/bundler-audit`, `npm test`, `npm run eval`.
 4. **Persona Subagents** — bảng 6 persona + chuỗi handoff.
 5. **Manager Orchestration** — bảng shortcut routing (`#pm`, `#architect`...).
-6. **Constitutional Rules** — tóm tắt 7 nguyên tắc + auto-reject patterns.
+6. **Constitutional Rules** — tóm tắt 13 nguyên tắc Mizuho + auto-reject patterns.
 
 > Copy nguyên file `CLAUDE.md` từ repo `my-ai-project` này (~ 250 dòng).
 
@@ -485,7 +492,7 @@ gh pr create --title "Test workflow" --body "Testing Claude review"
 
 ### Layer 4 — Observability (Langfuse)
 
-**Khi nào làm:** sau khi `backend/app/services/ai/claude_client.rb` tồn tại (tức là bạn đã scaffold Rails backend và viết ClaudeClient).
+**Khi nào làm:** sau khi AI feature được spec qua SDD process và `app/services/ai/claude_client.rb` (một `ApplicationService` subclass dùng Faraday) tồn tại.
 
 **Cài Langfuse self-hosted:**
 ```bash
@@ -550,7 +557,7 @@ Wrap method `chat(...)` để emit span chứa input/output/token usage/cost.
 - [ ] `.claude/skills/speckit-*` (14 skill) tồn tại
 
 ### Bước 3 — Constitution + Manager
-- [ ] `.specify/memory/constitution.md` điền 7 nguyên tắc
+- [ ] `.specify/memory/constitution.md` điền 13 nguyên tắc theo Mizuho standard
 - [ ] `CLAUDE.md` viết ở root
 
 ### Bước 4 — Personas
