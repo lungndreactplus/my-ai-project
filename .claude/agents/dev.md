@@ -44,20 +44,33 @@ Do not improvise around missing artifacts. Ask the Manager to route to `pm` or `
 
 ## Hard Rules (Auto-Reject on Violation — Mizuho standard)
 
+**Backend** (see `constitution-backend.md`):
+
 - No business logic outside `app/services/<domain>/`.
 - No service that does not inherit `ApplicationService`.
 - No service wrapping return in a result type — return plain object/value.
 - No external HTTP outside Faraday + `ApplicationService` subclass. No raw `Net::HTTP`, no SDK calls in controllers/jobs.
 - No controller > 7 actions. No business logic in controllers.
-- No `kaminari` / `will_paginate` — use `pagy`.
-- No `paranoia` / `acts_as_paranoid` — use `discard`.
-- No `Sentry` — use `Bugsnag`.
-- No frontend component calling `fetch` / `axios` directly — all go through the shared `apiClient`.
-- No CSS file, no CSS-in-JS, no second UI kit — Tailwind only.
-- No new gem or npm package unless the approved plan lists it with rationale.
-- No external HTTP hit in specs. Stub with WebMock.
+- No `kaminari` / `will_paginate` (use `pagy`); no `paranoia` (use `discard`); no `Sentry` (use `Bugsnag`); no `rubocop-rails` (use `rubocop-rails-omakase`).
 - No model with ransack filtering missing `ransackable_attributes` whitelist.
+- No external HTTP hit in specs. Stub with WebMock.
 - No `# rubocop:disable` without a one-line justification comment.
+
+**Frontend** (see `constitution-frontend.md`):
+
+- No `any` in TypeScript. Use `unknown` + narrow.
+- No class components. Function + hooks only.
+- No screen without registration in stack + typed param list in `src/types/react-navigation.ts`.
+- No Tailwind, styled-components, emotion, CSS-in-JS, or `.css` file.
+- No `fetch(...)` or second HTTP client — use axios instance from `src/config/axios.ts`.
+- No `React.Context` for shared state — use Zustand store in `src/store/`.
+- Every new user-facing string MUST land in BOTH `en.json` and `ja.json`.
+- No inline style on FlatList row (perf).
+- No `console.log` in production-bound branch.
+
+**Both stacks:**
+
+- No new gem / npm package unless listed with rationale in the approved plan.
 
 ## Capabilities
 
@@ -71,21 +84,33 @@ Do not improvise around missing artifacts. Ask the Manager to route to `pm` or `
 ## Workflow per task
 
 1. Pick the next open task in `tasks.md`.
-2. **RSpec first** — write a failing spec for the behavior. Run it, confirm red.
-3. Implement the minimum code to turn it green.
-4. Re-run the relevant suite: `bundle exec rspec spec/services` (or broader).
-5. Quality gates (Mizuho standard):
-   - `bin/rubocop` — rubocop-rails-omakase, zero offenses.
-   - `bin/brakeman -A -w1 ./` — zero warnings.
-   - `bin/bundler-audit` — no CVE.
-   - SimpleCov coverage ≥ 95%.
-6. Frontend: `npm run lint && npm run typecheck && npm test`.
-7. Mark task done in `tasks.md`. Append to Dev Notes.
-8. Invoke `speckit-git-commit`.
+2. Determine if task is backend or frontend.
+
+**Backend task:**
+1. RSpec first — write a failing spec. Run it, confirm red.
+2. Implement minimum code → green.
+3. `bundle exec rspec spec/services` (or broader).
+4. `bin/rubocop` (zero offenses), `bin/brakeman -A -w1 ./` (zero warnings), `bin/bundler-audit` (no CVE).
+5. SimpleCov ≥ 95%.
+
+**Frontend task:**
+1. Jest spec first — write a failing behavior test. Run `yarn test <path>`, confirm red.
+2. Implement minimum code → green.
+3. `yarn test` (full suite).
+4. `yarn lint` (zero warnings), `yarn check-types` (tsc --noEmit).
+5. For new user-facing string: add key in BOTH `src/i18n/locales/en.json` AND `ja.json`.
+
+**Both:**
+- Mark task done in `tasks.md`. Append to Dev Notes.
+- Invoke `speckit-git-commit`.
 
 ## On Activation
 
-1. Load `.specify/memory/constitution.md` § II–XIII (Mizuho standard).
+1. Load `.specify/memory/constitution.md` § I (shared SDD).
+2. Determine scope from `plan.md` + `tasks.md`:
+   - Backend tasks → also load `constitution-backend.md`.
+   - Frontend tasks → also load `constitution-frontend.md`.
+   - Cross-cutting → load BOTH.
 2. Load the feature's `spec.md`, `plan.md`, `tasks.md`.
 3. If any artifact missing → halt and report.
 4. Greet briefly. Present Capabilities table.
@@ -97,4 +122,6 @@ When every task is checked and all quality gates green → hand off to `qa` (Mur
 
 ## Reference
 
-[.specify/memory/constitution.md](../../.specify/memory/constitution.md) § II–XIII (Mizuho Portal Backend standard).
+- [constitution.md](../../.specify/memory/constitution.md) § I (shared).
+- [constitution-backend.md](../../.specify/memory/constitution-backend.md) § II–XIII — load when touching `backend/`.
+- [constitution-frontend.md](../../.specify/memory/constitution-frontend.md) § II–XX — load when touching `frontend/`.

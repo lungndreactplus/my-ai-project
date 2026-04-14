@@ -2,7 +2,12 @@
 
 This file tells Claude Code how to operate inside this repository. Every agent (Manager, Explore, Plan, Implementer, Reviewer) MUST read it before acting.
 
-**The authoritative rules live in [.specify/memory/constitution.md](.specify/memory/constitution.md).** This file is the operational handbook; the constitution is the law.
+**The authoritative rules live in 3 constitution files:**
+- [.specify/memory/constitution.md](.specify/memory/constitution.md) — shared § I (SDD) + Governance + index.
+- [.specify/memory/constitution-backend.md](.specify/memory/constitution-backend.md) — Rails 8 / Mizuho Portal backend (§ II–XIII).
+- [.specify/memory/constitution-frontend.md](.specify/memory/constitution-frontend.md) — React Native 0.83 / Mizuho mobile (§ II–XX).
+
+This file is the operational handbook; the three constitution files are the law.
 
 ---
 
@@ -13,10 +18,13 @@ This is a **two-app monorepo** with a 5-layer agent stack bolted on top of Spec-
 ```
 my-ai-project/
 ├── backend/                 # Rails 8.1 API-only (Ruby 3.4.9, PostgreSQL 16) — Mizuho Portal standard
-├── frontend/                # Vue 3 or React SPA (Vite + Tailwind + centralized store)
+├── frontend/                # React Native 0.83 mobile app (React 19 + TS 5.8 + Zustand + React Navigation 7) — Mizuho standard
 ├── evals/                   # L3 — promptfoo prompt-regression suite
 ├── .specify/
-│   ├── memory/constitution.md   # SOURCE OF TRUTH for architecture rules
+│   ├── memory/
+│   │   ├── constitution.md            # shared SDD + index
+│   │   ├── constitution-backend.md    # Rails 8 / Mizuho
+│   │   └── constitution-frontend.md   # React Native 0.83 / Mizuho
 │   └── specs/<feature>/         # Per-feature Spec + Plan (SDD artifacts)
 ├── .claude/
 │   ├── agents/              # L2 — persona subagents (pm, ba, architect, dev, qa)
@@ -84,16 +92,24 @@ bin/bundler-audit                          # CVE check on gems
 
 **Per constitution § X:** every new Service Object requires an RSpec. External HTTP (SSO, Anthropic, third-party) MUST be stubbed with WebMock — never hit real APIs in CI. SimpleCov coverage must stay ≥ 95%.
 
-### Frontend — Vitest / Jest, ESLint, TypeScript
+### Frontend — Jest, ESLint, TypeScript (React Native / yarn)
 
 ```bash
 cd frontend
-npm test                          # run test suite (Vitest or Jest)
-npm run test:watch                # watch mode
-npm run test -- path/to.test.ts   # single file
-npm run lint                      # ESLint
-npm run typecheck                 # tsc --noEmit
+yarn install                        # first time — use yarn, NOT npm
+yarn start                          # Metro bundler (dev)
+yarn android:dev / :staging / :prod # Android build variants
+yarn ios:dev / :staging / :prod     # iOS schemes
+
+# Test + quality
+yarn test                           # Jest + react-test-renderer
+yarn test path/to.test.ts           # single file
+yarn lint                           # ESLint + Prettier
+yarn lint:fix                       # auto-fix
+yarn check-types                    # tsc --noEmit
 ```
+
+**Per constitution-frontend.md § XIII:** `yarn lint` + `yarn check-types` MUST pass before PR. No npm — yarn is the standard (locked via `yarn.lock`).
 
 ### Prompt Regression (L3) — promptfoo
 
@@ -202,30 +218,60 @@ Example: `#explore:thorough Auth::JwtService usage` or `#research:worktree migra
 
 ## Non-Negotiable Constitutional Rules (summary — Mizuho standard)
 
-These come from [.specify/memory/constitution.md](.specify/memory/constitution.md). Read the full document for detail.
+The 3 constitution files hold the full rules. Quick reference:
+
+### Backend — `constitution-backend.md` (Rails 8 / Ruby 3.4.9 / Mizuho)
 
 - **§ II** — Ruby 3.4.9, Rails 8.1.3 API-only, PostgreSQL 16 (writer + reader replica), Solid Queue + Sidekiq.
-- **§ III** — All business logic in `app/services/<domain>/`, inherits **`ApplicationService`**, returns **plain object/value** (NOT a wrapper type).
-- **§ IV** — Controllers thin, ≤ 7 actions, inherit `Api::V1::BaseController`. Action body: parse params → Pundit `authorize` → service call → serializer render.
-- **§ V** — Background: Solid Queue (default) for ActiveJob; Sidekiq + `BaseWorker` (retry: 5) for retry/scheduling.
-- **§ VI** — All external HTTP via Faraday + faraday-retry, encapsulated in an `ApplicationService` subclass. WebMock stubs in tests.
-- **§ VII** — Data layer: `discard` (soft delete), `paper_trail` (audit), `ransack` (filter, whitelist), `pagy` (pagination).
-- **§ VIII** — `jsonapi-serializer` per model. Standard `{ success, code, data, pagination?, total? }` / error response shape.
-- **§ IX** — Custom errors in `lib/errors/` inheriting `ApplicationError`. `ErrorHandler` concern handles rescue_from.
-- **§ X** — RSpec mandatory; SimpleCov ≥ 95%; `rubocop-rails-omakase` clean; Brakeman + bundler-audit zero warnings.
-- **§ XI** — i18n: `en.yml` + `ja.yml` + `api.yml`.
-- **§ XII** — Deploy: Docker multi-stage + jemalloc, Kamal 2, Thruster, Bootsnap.
-- **§ XIII** — Routes split into `config/routes/api/v1.rb`. Controller namespace `Api::V1::*`.
-- **Frontend** — Tailwind only, centralized store (Pinia / Zustand / Redux Toolkit), shared `apiClient`. No direct `fetch`/`axios` in components.
+- **§ III** — Business logic in `app/services/<domain>/`, inherits **`ApplicationService`**, returns **plain object/value**.
+- **§ IV** — Controllers thin, ≤ 7 actions, inherit `Api::V1::BaseController`. Pundit `authorize` + serializer render.
+- **§ V** — Solid Queue (default) + Sidekiq `BaseWorker` (retry: 5).
+- **§ VI** — External HTTP via Faraday + faraday-retry inside `ApplicationService` subclass. WebMock in tests.
+- **§ VII** — `discard`, `paper_trail`, `ransack` (whitelist), `pagy`.
+- **§ VIII** — `jsonapi-serializer`, standard response shape.
+- **§ IX** — Custom errors in `lib/errors/` + `ErrorHandler` concern.
+- **§ X** — RSpec + SimpleCov ≥ 95% + `rubocop-rails-omakase` + Brakeman + bundler-audit — zero warnings.
+- **§ XI** — i18n `en.yml` + `ja.yml` + `api.yml`.
+- **§ XII** — Docker multi-stage + jemalloc + Kamal 2 + Thruster + Bootsnap.
+- **§ XIII** — Routes split into `config/routes/api/v1.rb`; `Api::V1::*` namespace.
 
-**Auto-reject patterns in review:**
-- A PORO under `app/services/` that does not inherit `ApplicationService`.
-- Service wrapping return in a custom result type — return plain values.
-- External HTTP outside Faraday + an `ApplicationService` subclass (no raw `Net::HTTP`, no SDK calls in controllers/jobs).
-- Controller > 7 actions, or business logic inside a controller action.
-- `kaminari` / `will_paginate` (use `pagy`); `paranoia` (use `discard`); `Sentry` (use `Bugsnag`); `rubocop-rails` (use `rubocop-rails-omakase`).
-- Model with ransack filtering missing `ransackable_attributes` whitelist.
-- New gem or npm dependency added without Plan-level justification.
+### Frontend — `constitution-frontend.md` (React Native 0.83 / Mizuho mobile)
+
+- **§ II** — React Native 0.83 / React 19 / TypeScript 5.8 strict (no `any`) / Hermes / Node ≥ 20 / yarn (not npm).
+- **§ III** — React Navigation 7 typed param lists in `src/types/react-navigation.ts`.
+- **§ IV** — Zustand stores domain-split in `src/store/use<X>Store.ts`. No Redux, no Context-as-store.
+- **§ V** — Forms via React Hook Form + yup (`schema.ts` sibling to `index.tsx`).
+- **§ VI** — i18next en+ja; every user-facing string in BOTH locales.
+- **§ VII** — Single **axios instance** from `src/config/axios.ts` — NO separate `apiClient` wrapper.
+- **§ VIII** — `StyleSheet.create` ONLY. NO Tailwind, NO CSS-in-JS, NO CSS files.
+- **§ IX** — `@shopify/flash-list` for long lists; FlatList with `keyExtractor` + `getItemLayout`.
+- **§ X** — Two component roots (repo-root `components/elements/` primitives + `src/components/` composites) + `src/pages/<Name>Screen/` feature-first.
+- **§ XI** — Function components only. No class. Rules of Hooks enforced.
+- **§ XII** — Jest + react-test-renderer.
+- **§ XIII** — ESLint + `@react-native/eslint-config` + Prettier; `yarn lint` + `yarn check-types` zero warnings.
+- **§ XVIII** — Android flavors (devDebug / stagingDebug / productDebug); iOS schemes (MizuhoDev/Staging/Prod); Fastlane lanes.
+
+### Auto-reject patterns (both stacks)
+
+**Backend:**
+- PORO under `app/services/` not inheriting `ApplicationService`.
+- Service wrapping return in a custom result type.
+- External HTTP outside Faraday + `ApplicationService`.
+- Controller > 7 actions; business logic in controller.
+- `kaminari` / `paranoia` / `Sentry` / `rubocop-rails` (use approved alternatives).
+- Ransack filter missing `ransackable_attributes` whitelist.
+
+**Frontend:**
+- `any` in TypeScript; class components.
+- Screen not registered in stack or not typed in `react-navigation.ts`.
+- Tailwind / styled-components / CSS-in-JS / `.css` file.
+- `fetch(...)` or a second HTTP client (use axios instance).
+- `React.Context` for shared state (use Zustand).
+- Translation key missing in `ja.json` (en + ja both required).
+- Inline style on FlatList row.
+- `console.log` in production-bound branch.
+
+**Both:** new gem / npm package added without Plan-level justification.
 
 ---
 

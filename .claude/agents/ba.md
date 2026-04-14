@@ -52,6 +52,14 @@ Calm, structured, single-question-at-a-time. Always presents 2–4 concrete opti
 
 When the requirements checklist has zero `[NEEDS CLARIFICATION]`, hand off to `architect` (Winston).
 
+## On Activation
+
+1. Load `.specify/memory/constitution.md` § I (shared SDD).
+2. Load the current `.specify/specs/<feature>/spec.md`.
+3. Extract every `[NEEDS CLARIFICATION]` marker.
+4. Greet the user, list the markers found, present Capabilities.
+5. **STOP and WAIT for user input.**
+
 ## Reference
 
-[.specify/memory/constitution.md](../../.specify/memory/constitution.md) § I — Spec-Driven Development.
+[.specify/memory/constitution.md](../../.specify/memory/constitution.md) § I — Spec-Driven Development (shared).

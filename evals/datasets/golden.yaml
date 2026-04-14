@@ -8,7 +8,7 @@
         - "Success Criteria"
         - "User Scenarios"
     - type: not-contains-any
-      value: ["JWT", "OAuth", "bcrypt", "Rails", "Ruby", "PostgreSQL", "Faraday", "Pundit", "cookie", "token"]
+      value: ["JWT", "OAuth", "bcrypt", "Rails", "Ruby", "PostgreSQL", "React Native", "Zustand", "axios", "Faraday", "cookie", "token"]
     - type: llm-rubric
       value: |
         Pass only if the spec:
@@ -17,24 +17,24 @@
         (3) has at least one measurable success criterion (time, rate, or percentage),
         (4) has at least one edge case or error scenario.
 
-- description: "PM — conversation create spec captures incremental UX without naming protocol"
+- description: "PM — mobile conversation spec captures incremental UX without naming protocol"
   vars:
-    feature_description: "A user picks one of their configured agents and starts a new conversation. They see the assistant's reply appear incrementally as it is generated."
+    feature_description: "A user picks one of their configured agents on the mobile app and starts a new conversation. They see the assistant's reply appear incrementally as it is generated."
   assert:
     - type: contains
       value: "User Scenarios"
     - type: not-contains-any
-      value: ["SSE", "WebSocket", "Anthropic", "Server-Sent Events", "Solid Cable", "ActionCable"]
+      value: ["SSE", "WebSocket", "Anthropic", "Server-Sent Events", "Solid Cable", "ActionCable", "FlashList", "StyleSheet"]
     - type: llm-rubric
-      value: "Pass if the spec captures incremental reveal of the assistant reply as a user-facing requirement, without naming any transport protocol or vendor."
+      value: "Pass if the spec captures incremental reveal of the assistant reply as a user-facing requirement, without naming any transport protocol, library, or vendor."
 
-- description: "Architect — plan cites Mizuho-standard conventions for every new service"
+- description: "Architect — backend plan cites Mizuho Rails conventions"
   vars:
     spec_content: |
       ## Overview
       Users can create a new conversation by picking one of their agents and sending a first message.
       ## Functional Requirements
-      - User selects an agent they own.
+      - User selects an agent they own (backend-only scope, no mobile UI).
       - System creates a conversation and records the first message.
       - System returns the assistant reply.
   assert:
@@ -51,7 +51,37 @@
       value: |
         Pass only if the plan:
         (1) lists at least one Service Object inheriting ApplicationService,
-        (2) cites a constitution section (§ II–XIII) for each architectural decision,
+        (2) cites a constitution-backend.md section (§ II–XIII) for each architectural decision,
         (3) includes an RSpec task for every new service,
-        (4) routes any external HTTP (including Claude/Anthropic if applicable) through Faraday + an ApplicationService subclass,
+        (4) routes any external HTTP through Faraday + ApplicationService subclass,
         (5) uses Mizuho-standard gems (pagy, discard, paper_trail, ransack, jsonapi-serializer, bugsnag) — never the alternatives (kaminari, paranoia, sentry).
+
+- description: "Architect — frontend plan cites Mizuho React Native conventions"
+  vars:
+    spec_content: |
+      ## Overview
+      User can view a list of their saved agents on the mobile app home screen and tap one to open its detail page.
+      ## Functional Requirements
+      - List shows up to 50 agents with pagination.
+      - Each row shows agent name + status.
+      - Tap navigates to detail screen.
+  assert:
+    - type: contains-all
+      value:
+        - "React Navigation"
+        - "Zustand"
+        - "StyleSheet"
+        - "FlashList"
+        - "i18next"
+    - type: not-contains-any
+      value: ["Tailwind", "styled-components", "Redux", "Pinia", "apiClient wrapper", "fetch("]
+    - type: llm-rubric
+      value: |
+        Pass only if the plan:
+        (1) registers the new screen in the appropriate stack + adds typed param list in src/types/react-navigation.ts,
+        (2) uses a Zustand store (domain-split) for shared state,
+        (3) uses StyleSheet.create (never Tailwind/CSS-in-JS),
+        (4) uses @shopify/flash-list for the list,
+        (5) routes HTTP through the axios instance at src/config/axios.ts — never a separate apiClient wrapper,
+        (6) adds i18n keys for every user-facing string in both en.json and ja.json,
+        (7) cites constitution-frontend.md sections (§ II–XX) for each decision.

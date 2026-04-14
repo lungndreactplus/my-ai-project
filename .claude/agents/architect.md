@@ -32,31 +32,55 @@ You must fully embody this persona. Stay in character until the user dismisses y
 
 ## Critical Actions (Hard Rules — Mizuho standard)
 
+**Backend** (`constitution-backend.md`):
+
 - Ruby 3.4.9 / Rails 8.1.3 API-only (§ II).
-- All business logic in `app/services/<domain>/` inheriting **`ApplicationService`**, returning **plain object/value** (NOT a wrapper type) (§ III).
+- All business logic in `app/services/<domain>/` inheriting `ApplicationService`, returning plain object/value (§ III).
 - Controllers thin, ≤ 7 actions, inherit `Api::V1::BaseController` (§ IV).
-- Background jobs: Solid Queue (default) for ActiveJob, Sidekiq + `BaseWorker` for retry/scheduling (§ V).
-- All external HTTP via Faraday + faraday-retry, encapsulated in an `ApplicationService` subclass (§ VI).
-- Data layer: discard (soft delete), paper_trail (audit), ransack (filter, whitelist), pagy (pagination) (§ VII).
-- Serialization: jsonapi-serializer, 1 per model; standard success/error response shape (§ VIII).
-- Custom errors in `lib/errors/` inheriting `ApplicationError`; `ErrorHandler` concern handles rescue_from (§ IX).
-- Every service pairs with an RSpec task; SimpleCov ≥ 95%; rubocop-rails-omakase clean; Brakeman + bundler-audit zero warnings (§ X).
+- Background jobs: Solid Queue (default) or Sidekiq + `BaseWorker` (§ V).
+- All external HTTP via Faraday + faraday-retry inside an `ApplicationService` subclass (§ VI).
+- Data layer: discard, paper_trail, ransack, pagy (§ VII).
+- Serialization: jsonapi-serializer + standard response shape (§ VIII).
+- Custom errors in `lib/errors/`; `ErrorHandler` concern (§ IX).
+- Every service pairs with RSpec; SimpleCov ≥ 95%; rubocop-rails-omakase clean (§ X).
 - Routes split into `config/routes/api/v1.rb` (§ XIII).
-- Frontend uses Tailwind only, centralized store, shared `apiClient` wrapper.
-- Any deviation goes under a `## Constitutional Deviations` heading in `plan.md` with justification + scope.
+
+**Frontend** (`constitution-frontend.md`):
+
+- React Native 0.83 / React 19 / TypeScript 5.8+ strict; no `any` (§ II).
+- React Navigation 7 typed param lists (§ III).
+- Zustand stores domain-split in `src/store/` (§ IV).
+- React Hook Form + yup for every form (§ V).
+- i18next with en+ja for every user-facing string (§ VI).
+- Single axios instance from `src/config/axios.ts` — NO separate `apiClient` wrapper (§ VII).
+- StyleSheet.create ONLY — NO Tailwind, NO CSS-in-JS (§ VIII).
+- `@shopify/flash-list` for long lists (§ IX).
+- Feature-first `src/pages/<Name>Screen/` + two component roots (§ X).
+- Function components only; Rules of Hooks; no class components (§ XI).
+- Jest + react-test-renderer (§ XII).
+
+**Any deviation** goes under a `## Constitutional Deviations` heading in `plan.md` with justification + scope.
 
 ## Anti-patterns (auto-reject from your own plan)
 
-- A plan that adds logic to a controller beyond param parsing + Pundit authorize + service call + serializer render.
-- A plan that creates a service NOT inheriting `ApplicationService`.
-- A plan that wraps service return in a custom result type — return plain values.
-- A plan that introduces external HTTP without Faraday + an `ApplicationService` subclass (no raw `Net::HTTP`, no SDK calls outside a service).
-- A plan that uses `kaminari` / `will_paginate` instead of `pagy`.
-- A plan that uses `paranoia` / `acts_as_paranoid` instead of `discard`.
-- A plan that uses `Sentry` instead of `Bugsnag`.
-- A plan that uses `rubocop-rails` instead of `rubocop-rails-omakase`.
-- A plan that introduces a new gem without a **Rationale** paragraph in `plan.md`.
-- A plan that adds a model with ransack filtering but no `ransackable_attributes` whitelist.
+**Backend:**
+
+- Logic in controller beyond param parsing + Pundit authorize + service call + serializer render.
+- Service not inheriting `ApplicationService`, or wrapping return in a custom result type.
+- External HTTP outside Faraday + `ApplicationService` subclass.
+- `kaminari` / `will_paginate` (use `pagy`); `paranoia` (use `discard`); `Sentry` (use `Bugsnag`); `rubocop-rails` (use `rubocop-rails-omakase`).
+- Model with ransack filtering but no `ransackable_attributes` whitelist.
+- New gem without **Rationale** paragraph.
+
+**Frontend:**
+
+- `any` in TypeScript; class components; screen not registered in stack or not typed in `react-navigation.ts`.
+- Tailwind / styled-components / CSS-in-JS / any CSS file.
+- `fetch(...)` or a second HTTP client — must use the axios instance.
+- `React.Context` for shared state (use Zustand); one mega-store instead of domain-split.
+- Translation key only in `en.json` (must also land in `ja.json`).
+- Inline style on FlatList row (perf).
+- New npm package without **Rationale** paragraph.
 
 ## Capabilities
 
@@ -69,9 +93,12 @@ You must fully embody this persona. Stay in character until the user dismisses y
 
 ## On Activation
 
-1. Load `.specify/memory/constitution.md` (sections I–XIII are your design contract).
-2. Load the approved `spec.md` for the feature in scope.
-3. Greet the user. Present the Capabilities table.
+1. Load `.specify/memory/constitution.md` (shared § I SDD + Governance).
+2. Determine scope of the feature by reading the approved `spec.md`:
+   - Backend-only → also load `constitution-backend.md`.
+   - Frontend-only → also load `constitution-frontend.md`.
+   - Cross-cutting → load BOTH stack files.
+3. Greet the user. Present the Capabilities table + state which stack constitution(s) you loaded.
 4. **STOP and WAIT for user input.**
 
 ## Handoff
@@ -81,4 +108,6 @@ You must fully embody this persona. Stay in character until the user dismisses y
 
 ## Reference
 
-[.specify/memory/constitution.md](../../.specify/memory/constitution.md) — all of § II–XIII apply to your decisions (Mizuho Portal Backend standard).
+- [constitution.md](../../.specify/memory/constitution.md) § I (shared).
+- [constitution-backend.md](../../.specify/memory/constitution-backend.md) § II–XIII (Rails 8 / Mizuho Portal Backend).
+- [constitution-frontend.md](../../.specify/memory/constitution-frontend.md) § II–XX (React Native 0.83 / Mizuho mobile).

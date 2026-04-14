@@ -22,21 +22,44 @@ jobs:
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           prompt: |
-            Review this PR against .specify/memory/constitution.md (Mizuho Portal standard). Produce an inline-comment review.
+            Review this PR against the project constitution (Mizuho standard). Produce an inline-comment review.
 
-            MANDATORY CHECKS (fail the job if any violation is found):
+            LOAD THESE CONSTITUTION FILES:
+            - .specify/memory/constitution.md — shared § I (SDD) + Governance.
+            - .specify/memory/constitution-backend.md — Rails 8 / Mizuho Portal (§ II–XIII). Load when diff touches backend/**.
+            - .specify/memory/constitution-frontend.md — React Native 0.83 / Mizuho mobile (§ II–XX). Load when diff touches frontend/**.
 
-            1. § II — Ruby 3.4.9 / Rails 8.1.3 API-only. .ruby-version pinned. No views, no session middleware.
-            2. § III — Every new file under backend/app/services/ inherits `ApplicationService`. Returns plain object/value (no wrapper type).
-            3. § IV — Controllers thin (≤ 7 actions). Action body only: parse params → Pundit authorize → service call → serializer render. No business logic.
-            4. § V — Background jobs use BaseWorker (Sidekiq) or ApplicationJob (Solid Queue). No raw Sidekiq::Worker include, no ad-hoc Thread.new.
-            5. § VI — All external HTTP via Faraday + faraday-retry, encapsulated in an ApplicationService subclass. No Net::HTTP, no raw SDK calls in controllers/jobs.
-            6. § VII — Pagination uses pagy (not kaminari/will_paginate). Soft delete uses discard (not paranoia). Audit via paper_trail. Ransack uses ransackable_attributes whitelist.
-            7. § VIII — jsonapi-serializer per model. Response format matches { success, code, data, pagination?, total? } / { success: false, code, errors }.
-            8. § IX — Custom errors in lib/errors/ inheriting ApplicationError. ErrorHandler concern handles rescue_from.
-            9. § X — Every new service has an RSpec. External HTTP stubbed with WebMock. SimpleCov coverage stays ≥ 95%. rubocop-rails-omakase passes. Brakeman + bundler-audit zero warnings.
-            10. § XIII — Routes added in config/routes/api/v1.rb (NOT monolithic routes.rb). Controller namespace Api::V1::*.
-            11. Frontend (§ VI of frontend rules — Tailwind, central store, shared apiClient).
-            12. If the branch name or PR title references a feature under .specify/specs/, verify the diff is consistent with that feature's plan.md — flag any scope creep.
+            MANDATORY BACKEND CHECKS (fail if diff touches backend/** and any violation found):
 
-            Comment on each violation inline with the specific file:line and the section number it violates. End with an overall verdict: APPROVE / REQUEST CHANGES / REJECT.
+            B1. § II — Ruby 3.4.9 / Rails 8.1.3 API-only. .ruby-version pinned. No views, no session middleware.
+            B2. § III — Every new file under backend/app/services/ inherits `ApplicationService`. Returns plain object/value (no wrapper type).
+            B3. § IV — Controllers thin (≤ 7 actions). Action body: parse params → Pundit authorize → service call → serializer render. No business logic.
+            B4. § V — Background jobs use BaseWorker (Sidekiq) or ApplicationJob (Solid Queue). No raw Sidekiq::Worker include.
+            B5. § VI — All external HTTP via Faraday + faraday-retry inside an ApplicationService subclass. No Net::HTTP, no raw SDK calls in controllers/jobs.
+            B6. § VII — Pagination via pagy (not kaminari/will_paginate). Soft delete via discard (not paranoia). Audit via paper_trail. Ransack uses ransackable_attributes whitelist.
+            B7. § VIII — jsonapi-serializer per model. Response matches { success, code, data, pagination?, total? } / { success: false, code, errors }.
+            B8. § IX — Custom errors in lib/errors/ inheriting ApplicationError. ErrorHandler concern handles rescue_from.
+            B9. § X — Every new service has RSpec. External HTTP stubbed with WebMock. SimpleCov ≥ 95%. rubocop-rails-omakase clean. Brakeman + bundler-audit zero warnings.
+            B10. § XIII — Routes added in config/routes/api/v1.rb (NOT monolithic routes.rb). Controller namespace Api::V1::*.
+
+            MANDATORY FRONTEND CHECKS (fail if diff touches frontend/** and any violation found):
+
+            F1. § II — TypeScript strict: no `any` (use unknown + narrow). No class components. Explicit types for props/navigation params/store shapes.
+            F2. § III — New screens registered in the correct stack + typed param list added to src/types/react-navigation.ts.
+            F3. § IV — Global state via Zustand stores in src/store/use<X>Store.ts, domain-split. No React.Context for shared state. No Redux/MobX.
+            F4. § V — Forms use React Hook Form + yup (schema.ts sibling to screen index.tsx).
+            F5. § VI — Every new user-facing string has keys in BOTH src/i18n/locales/en.json AND ja.json. No hard-coded English literals.
+            F6. § VII — All HTTP via the axios instance from src/config/axios.ts. NO fetch(), NO second HTTP client, NO separate apiClient wrapper abstraction.
+            F7. § VIII — Styling via StyleSheet.create ONLY. NO Tailwind, NO styled-components, NO CSS-in-JS, NO .css files. Avoid inline style on FlatList rows.
+            F8. § IX — Long lists use @shopify/flash-list. FlatList alternatives must declare keyExtractor + getItemLayout when size fixed.
+            F9. § X — Primitives under repo-root components/elements/. Composites under src/components/. Screens under src/pages/<Name>Screen/.
+            F10. § XI — Function components only. Rules of Hooks respected. react-hooks/exhaustive-deps fixed or documented.
+            F11. § XIII — yarn lint + yarn check-types pass with zero warnings. No eslint-disable without one-line justification.
+            F12. No console.log in production-bound code.
+
+            BOTH STACKS:
+
+            X1. No new gem (Gemfile.lock) or npm package (yarn.lock) unless listed with Rationale in plan.md.
+            X2. If the branch name or PR title references a feature under .specify/specs/, verify the diff is consistent with that feature's plan.md — flag any scope creep.
+
+            Comment on each violation inline with the specific file:line and the constitution section (e.g. `constitution-frontend.md § VIII`). End with an overall verdict: APPROVE / REQUEST CHANGES / REJECT.
